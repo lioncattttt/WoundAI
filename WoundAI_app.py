@@ -1,6 +1,6 @@
 import streamlit as st
 from ultralytics import YOLO
-import cv2u
+import cv2
 import numpy as np
 
 # --- การตั้งค่าหน้าเว็บและการแสดงผลแบบเต็มหน้าจอ (Wide Layout) ---
