@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 # --- การตั้งค่าหน้าเว็บและการแสดงผลแบบเต็มหน้าจอ (Wide Layout) ---
-st.set_page_config(page_title="WoundAi - Analysis", layot="wide")
+st.set_page_config(page_title="WoundAi - Analysis", layout="wide")
 
 # สไตล์ CSS หลัก สำหรับปรับแต่งสตรีมลิตให้สวยงามเต็มหน้าจออย่างแท้จริง
 st.markdown("""
