@@ -168,8 +168,8 @@ st.markdown("""
     <span class="material-symbols-outlined" style="color:#00478d; font-size: 24px; margin-right: 8px;">biotech</span>
     <h1 style="margin:0; font-size:22px; font-weight:700; color:#00478d; font-family:'Inter';">WoundAi</h1>
 </div>
-<h2 class='center-text' style='margin-top:10px; margin-bottom:2px; font-size: 24px; color:#00478d; font-weight:700;'>New Analysis</h2>
-<p class='center-text' style='color:#424752; margin-bottom:20px;'>Ensure the wound is centered and well-lit for accurate diagnostic results.</p>
+<h2 class='center-text' style='margin-top:10px; margin-bottom:2px; font-size: 24px; color:#00478d; font-weight:700;'>เริ่มต้นการวิเคราะห์</h2>
+<p class='center-text' style='color:#424752; margin-bottom:20px;'>ตรวจสอบตำแหน่งภาพถ่ายของแผลให้อยู่ในกรอบภาพตรงกลางเพื่อให้ได้ผลการวิเคราะห์ที่แม่นยำที่สุด</p>
 """, unsafe_allow_html=True)
 
 tab_camera, tab_upload = st.tabs(["📸 กล้องถ่ายรูป", "📁 อัปโหลดไฟล์ภาพ"])
