@@ -154,7 +154,7 @@ FIRST_AID_GUIDE = {
 @st.cache_resource
 def load_model():
     # อัปเดต: เปลี่ยนเส้นทางมาดึงไฟล์โมเดลจากไดเรกทอรีหลัก (Root) โดยตรงตามภาพ image_ec85b8.png
-    return YOLO("best.pt")
+    return YOLO("best-8.pt")
 
 try:
     model = load_model()
