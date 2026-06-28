@@ -2,6 +2,7 @@ import streamlit as st
 from ultralytics import YOLO
 import cv2
 import numpy as np
+import os  # เพิ่มการจัดการระบบ Path เพื่อแก้ไขปัญหาไม่เจอโมเดล
 
 # --- การตั้งค่าหน้าเว็บและการแสดงผลแบบเต็มหน้าจอ (Wide Layout) ---
 st.set_page_config(page_title="WoundAi - Analysis", layout="wide")
@@ -153,12 +154,23 @@ FIRST_AID_GUIDE = {
 
 @st.cache_resource
 def load_model():
-    return YOLO("best.pt")
+    # ดึงพิกัดที่อยู่โฟลเดอร์ของไฟล์ Python สคริปต์ตัวนี้โดยตรง
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # ผูกเข้ากับชื่อไฟล์โมเดลเพื่อป้องกันความผิดพลาดของระบบรันไทม์
+    model_path = os.path.join(current_dir, "best.pt")
+    
+    # ตรวจสอบว่าไฟล์มีอยู่ในโฟลเดอร์จริงไหม ถ้าไม่มีให้แจ้งข้อความรายละเอียดเตือน
+    if not os.path.exists(model_path):
+        st.error(f"❌ ระบบไม่พบไฟล์โมเดลที่พิกัด: {model_path}")
+        st.info("กรุณาตรวจสอบว่าไฟล์ 'best.pt' ถูกวางอยู่ในโฟลเดอร์เดียวกับสคริปต์แอปพลิเคชันนี้")
+        return None
+        
+    return YOLO(model_path)
 
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"ไม่สามารถโหลดโมเดลได้: {e}")
+    st.error(f"ไม่สามารถโหลดโมเดลได้เนื่องจากข้อผิดพลาด: {e}")
     model = None
 
 # --- ส่วนหัวจัดตรงกลางขยายเต็มหน้าจอ ---
@@ -206,7 +218,7 @@ if image_to_process is not None:
                     best_box_idx = np.argmax(boxes.conf.cpu().numpy())
                     class_id = int(boxes.cls[best_box_idx])
                     confidence_score = float(boxes.conf[best_box_idx]) * 100
-                    # เพิ่มความปลอดภัย: รองรับกรณีกระทบความผิดพลาดของคำทำนาย (Fallback mapping)
+                    
                     raw_key = model.names[class_id].lower()
                     if raw_key in ["brun_wound", "burn_wound"]:
                         class_key = "burn_wound"
@@ -224,7 +236,6 @@ if image_to_process is not None:
                 
                 dash_val = 113.1 - (113.1 * confidence_score / 100)
                 
-                # ปรับแต่งคำอธิบายประเภทเนื้อหาให้เหมาะสมกับเคสผิวปกติ
                 if guide["is_normal"]:
                     clinical_findings = guide["findings"]
                 else:
