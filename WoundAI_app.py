@@ -1,478 +1,370 @@
-"""
-WoundAI — Clinical Wound Detection
-Run with: streamlit run app.py
-"""
-
-import time
-from pathlib import Path
-
+import streamlit as st
+from ultralytics import YOLO
 import cv2
 import numpy as np
-import streamlit as st
-from PIL import Image
-from ultralytics import YOLO
 
-# ----------------------------------------------------------------------------
-# Page setup
-# ----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="WoundAI",
-    page_icon="🩹",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
+# --- การตั้งค่าหน้าเว็บและการแสดงผลแบบเต็มหน้าจอ (Wide Layout) ---
+st.set_page_config(page_title="WoundAi - Analysis", layout="wide")
 
-MODEL_PATH = "best-8.pt"        # change if your weights live elsewhere
-CONFIDENCE_THRESHOLD = 0.20      # below this, a detection is flagged amber as low-confidence
-
-# Initialize a widget version counter in session state if it doesn't exist
-if "widget_version" not in st.session_state:
-    st.session_state["widget_version"] = 0
-
-# ----------------------------------------------------------------------------
-# Reset handler logic
-# ----------------------------------------------------------------------------
-def reset_all_inputs():
-    # Incrementing this counter forces Streamlit to recreate completely clean widgets
-    st.session_state["widget_version"] += 1
-
-# ----------------------------------------------------------------------------
-# Styling — clinical dark theme, monospace for all data readouts
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
+# สไตล์ CSS หลัก สำหรับปรับแต่งสตรีมลิตให้สวยงามเต็มหน้าจออย่างแท้จริง
+st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
-
-    :root {
-        --bg: #1A2129;
-        --bg-card: #212A33;
-        --bg-card-hover: #252F39;
-        --border: #313D49;
-        --text: #E8ECEF;
-        --text-dim: #8B97A3;
-        --teal: #2DD4BF;
-        --teal-dim: #1A3B38;
-        --amber: #F59E0B;
-        --amber-dim: #3D2F14;
-    }
-
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, sans-serif;
-    }
-
-    .stApp {
-        background-color: var(--bg);
-        color: var(--text);
-    }
-
-    .mono {
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    /* Header */
-    .wa-header {
-        display: flex;
-        align-items: baseline;
-        gap: 0.6rem;
-        margin-bottom: 0.1rem;
-    }
-    .wa-header .mark {
-        font-size: 1.9rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        color: var(--text);
-    }
-    .wa-header .mark span {
-        color: var(--teal);
-    }
-    .wa-tagline {
-        color: var(--text-dim);
-        font-size: 0.92rem;
-        margin-bottom: 1.8rem;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 1.4rem;
-    }
-
-    /* Step labels */
-    .wa-step {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        margin: 1.6rem 0 0.7rem 0;
-    }
-    .wa-step .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--teal);
-        flex-shrink: 0;
-    }
-    .wa-step .dot.idle {
-        background: var(--border);
-    }
-    .wa-step-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.74rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--text-dim);
-    }
-
-    /* Upload zone override */
-    [data-testid="stFileUploader"] {
-        border: 1.5px dashed var(--border);
-        border-radius: 10px;
-        padding: 1.1rem;
-        background: var(--bg-card);
-        transition: border-color 0.15s ease;
-    }
-    [data-testid="stFileUploader"]:hover {
-        border-color: var(--teal);
-    }
-    [data-testid="stFileUploaderDropzoneInstructions"] span {
-        color: var(--text) !important;
-    }
-
-    /* Custom layout for secondary buttons to play nice with custom css */
-    div[data-testid="stButton"] button[pity-button="true"], 
-    .stButton button:not([kind="primary"]) {
-        background: transparent !important;
-        color: var(--text-dim) !important;
-        border: 1px solid var(--border) !important;
-    }
-    .stButton button:not([kind="primary"]):hover {
-        border-color: #EF4444 !important;
-        color: #EF4444 !important;
-        opacity: 1;
-    }
-
-    /* Primary button rules */
-    .stButton button[kind="primary"] {
-        background: var(--teal) !important;
-        color: #0B1512 !important;
-        border: none !important;
-        font-weight: 600;
-        border-radius: 8px;
-        padding: 0.55rem 1.4rem;
-        transition: opacity 0.15s ease;
-    }
-    .stButton button[kind="primary"]:hover {
-        opacity: 0.88;
-    }
-
-    /* Vitals-style readout card */
-    .vitals-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1rem 1.2rem;
-        margin: 0.5rem 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .vitals-label {
-        font-size: 0.82rem;
-        color: var(--text-dim);
-        font-weight: 500;
-    }
-    .vitals-class {
-        font-size: 0.95rem;
-        color: var(--text);
-        font-weight: 600;
-        margin-top: 0.15rem;
-    }
-    .vitals-reading {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.8rem;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .vitals-reading.ok { color: var(--teal); }
-    .vitals-reading.low { color: var(--amber); }
-    .vitals-unit {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.75rem;
-        color: var(--text-dim);
-        margin-left: 0.15rem;
-    }
-    .vitals-tag {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.65rem;
-        letter-spacing: 0.06em;
-        padding: 0.18rem 0.5rem;
-        border-radius: 4px;
-        margin-top: 0.35rem;
-        display: inline-block;
-    }
-    .vitals-tag.ok { background: var(--teal-dim); color: var(--teal); }
-    .vitals-tag.low { background: var(--amber-dim); color: var(--amber); }
-
-    /* Summary strip */ 
-    .summary-strip {
-        display: flex;
-        gap: 1.6rem;
-        margin: 1rem 0 0.4rem 0;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-        color: var(--text-dim);
-    }
-    .summary-strip b {
-        color: var(--text);
-    }
-
-    /* Empty state */
-    .empty-state {
-        text-align: center;
-        padding: 2.4rem 1rem;
-        color: var(--text-dim);
-        font-size: 0.88rem;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--bg-card);
-    }
-
-    .footnote {
-        color: var(--text-dim);
-        font-size: 0.76rem;
-        margin-top: 2.2rem;
-        border-top: 1px solid var(--border);
-        padding-top: 1rem;
-    }
-
-    [data-testid="stImage"] img {
-        border-radius: 8px;
-        border: 1px solid var(--border);
-    }
-
-    #MainMenu, footer, header {visibility: hidden;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ----------------------------------------------------------------------------
-# Header
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="wa-header"><span class="mark">Wound<span>AI</span></span></div>
-    <div class="wa-tagline">Image-based wound detection — upload a clinical photo to flag and localize wound regions.</div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ----------------------------------------------------------------------------
-# Step 1 & 2 handle file input and early st.stop() if active_file is None...
-# ----------------------------------------------------------------------------
-
-# ... (Image display code happens here) ...
-
-# ----------------------------------------------------------------------------
-# Step 3 — Actions (Detect & Clear)
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="wa-step"><div class="dot"></div><div class="wa-step-label">03 · Actions</div></div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# 1. First, create the layout columns
-col1, col2 = st.columns([1, 4])
-
-# 2. Second, define the 'run' variable inside the column layout
-with col1:
-    run = st.button("Detect wounds", type="primary", use_container_width=True)
-with col2:
-    clear = st.button("Clear image", type="secondary", on_click=reset_all_inputs)
-
-# 3. Third, check 'if run:' AFTER it has been defined above
-if run:
-    with st.spinner("Analyzing image..."):
-        t0 = time.time()
-        
-        # 1. Convert PIL image to numpy array
-        img_array = np.array(image)
-        
-        # 2. Convert RGB to BGR for proper model processing
-        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-        
-        # 3. Pass the corrected BGR array into the model
-        results = model(img_bgr, verbose=False, conf=0.01)
-        elapsed = time.time() - t0
-
-        result = results[0]
-        
-        # Force override the result dictionary for the image annotations
-        result.names = {
-            0: "Abrasion",
-            1: "Laceration",
-            2: "Surgical Wound",
-            3: "Ulcer"
+        body, .main, .block-container {
+            background-color: #f6faff !important;
+            font-family: 'Inter', sans-serif;
+            padding-top: 10px !important;
+            max-width: 100% !important; 
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
         }
-        
-        boxes = result.boxes
-        
-        # 4. Plot results
-        res_plotted = result.plot()
-        res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
+        .center-text {
+            text-align: center;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+            justify-content: center;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #e6eff8;
+            border-radius: 8px 8px 0px 0px;
+            padding: 8px 16px;
+            color: #424752;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #00478d !important;
+            color: white !important;
+        }
+        .guideline-box {
+            background-color: #ecf5fe;
+            border: 1px solid #c2c6d4;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 25px;
+            width: 100%;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-    # ... (Rest of your result displaying HTML blocks go here) ...
-# ----------------------------------------------------------------------------
-# Step 1 — Image Input (Upload or Camera)
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="wa-step"><div class="dot"></div><div class="wa-step-label">01 · Input image</div></div>
-    """,
-    unsafe_allow_html=True,
-)
+# --- คลังข้อมูลวิธีปฐมพยาบาล 10 คลาส (เวอร์ชันขั้นตอนภาษาไทย เข้าใจง่าย ปฏิบัติตามได้ทันที) ---
+FIRST_AID_GUIDE = {
+    "abrasion_wound": {
+        "title": "Abrasion Wound", "th_title": "แผลถลอก", "is_normal": False, "badge": "Surface Injury",
+        "findings": "พบรอยโรคที่มีลักษณะเป็นแผลตื้นบริเวณผิวหนังกำพร้า มีการถลอกจากการครูดหรือเสียดสี",
+        "morphology": "มีเลือดออกซึมเล็กน้อย ขอบแผลไม่เรียบ พื้นแผลมีสีแดงเรื่อ อาจมีเศษดินหรือสิ่งสกปรกปนเปื้อนเล็กน้อย",
+        "steps": [
+            "ล้างแผลให้สะอาดด้วยน้ำเกลือปราศจากเชื้อ (Saline) หรือเปิดน้ำสะอาดไหลผ่านเบาๆ เพื่อล้างเศษดินและสิ่งสกปรกออก",
+            "ทายาฆ่าเชื้อหรือยาปฏิชีวนะบางๆ บนผิวแผล เพื่อป้องกันการติดเชื้อและรักษาความชุ่มชื้นของเนื้อเยื่อ",
+            "ปิดแผลด้วยผ้าก๊อซหรือพลาสเตอร์ชนิดไม่ติดแผล (Non-stick pad) เพื่อป้องกันสิ่งสกปรกและการเสียดสีภายนอก"
+        ]
+    },
+    "bruises_wound": {
+        "title": "Bruises Wound", "th_title": "แผลฟกช้ำ", "is_normal": False, "badge": "Hematoma",
+        "findings": "พบการสะสมของเลือดใต้ชั้นผิวหนังจากการกระแทก โดยไม่มีรอยฉีกขาดของผิวหนังภายนอก",
+        "morphology": "ผิวหนังมีสีม่วง คล้ำ เขียว หรือเหลืองตามอายุของรอยช้ำ มีอาการบวมและเจ็บเสียวเมื่อกด",
+        "steps": [
+            "ประคบเย็นบริเวณที่บวมช้ำด้วยเจลเย็นหรือถุงน้ำแข็งห่อผ้า นาน 15-20 นาที ทุกๆ 2-3 ชั่วโมง ในช่วง 48 ชั่วโมงแรกเพื่อลดบวม",
+            "ยกส่วนที่บาดเจ็บหรืออวัยวะนั้นๆ ให้สูงกว่าระดับหัวใจเท่าที่ทำได้ และพักการใช้งานเพื่อลดการสะสมของเลือดใต้ผิวหนัง",
+            "เมื่อพ้น 48 ชั่วโมงแรกไปแล้ว ให้เปลี่ยนเป็นประคบอุ่นเพื่อกระตุ้นการไหลเวียนเลือดและเร่งการดูดซึมรอยช้ำให้หายเร็วขึ้น"
+        ]
+    },
+    "burn_wound": {  
+        "title": "Burn Wound", "th_title": "แผลไฟไหม้ / น้ำร้อนลวก", "is_normal": False, "badge": "Thermal Injury",
+        "findings": "พบการทำลายของเนื้อเยื่อผิวหนังจากความร้อน สารเคมี หรือกระแสไฟฟ้า",
+        "morphology": "ผิวหนังแดงจัด บวม มีตุ่มน้ำพอง (Blisters) หรือผิวหนังลอกหลุด มีความรู้สึกปวดแสบปวดร้อนรุนแรง",
+        "steps": [
+            "ล้างแผลทันทีด้วยน้ำสะอาดอุณหภูมิห้องไหลผ่านเบาๆ นาน 10-20 นาที เพื่อระบายความร้อน ห้ามใช้น้ำแข็งหรือยาสีฟันเด็ดขาด",
+            "ห้ามเจาะหรือแกะตุ่มน้ำพองที่เกิดขึ้นเอง เนื่องจากผิวหนังของตุ่มน้ำเป็นเกราะป้องกันเชื้อโรคตามธรรมชาติที่สำคัญที่สุด",
+            "ทาเจลว่านหางจระเข้สำหรับแผลไหม้หรือยาทางแพทย์ จากนั้นปิดแผลหลวมๆ ด้วยผ้าก๊อซสะอาดเพื่อป้องกันสิ่งสกปรก"
+        ]
+    },
+    "brun_wound": {  
+        "title": "Burn Wound", "th_title": "แผลไฟไหม้ / น้ำร้อนลวก", "is_normal": False, "badge": "Thermal Injury",
+        "findings": "พบการทำลายของเนื้อเยื่อผิวหนังจากความร้อน สารเคมี หรือกระแสไฟฟ้า",
+        "morphology": "ผิวหนังแดงจัด บวม มีตุ่มน้ำพอง (Blisters) หรือผิวหนังลอกหลุด มีความรู้สึกปวดแสบปวดร้อนรุนแรง",
+        "steps": [
+            "ล้างแผลทันทีด้วยน้ำสะอาดอุณหภูมิห้องไหลผ่านเบาๆ นาน 10-20 นาที เพื่อระบายความร้อน ห้ามใช้น้ำแข็งหรือยาสีฟันเด็ดขาด",
+            "ห้ามเจาะหรือแกะตุ่มน้ำพองที่เกิดขึ้นเอง เนื่องจากผิวหนังของตุ่มน้ำเป็นเกราะป้องกันเชื้อโรคตามธรรมชาติที่สำคัญที่สุด",
+            "ทาเจลว่านหางจระเข้สำหรับแผลไหม้หรือยาทางแพทย์ จากนั้นปิดแผลหลวมๆ ด้วยผ้าก๊อซสะอาดเพื่อป้องกันสิ่งสกปรก"
+        ]
+    },
+    "cut_wound": {
+        "title": "Cut Wound", "th_title": "แผลถูกบาด / แผลของมีคม", "is_normal": False, "badge": "Incised Wound",
+        "findings": "พบรอยแยกของผิวหนังเป็นทางยาวขอบเรียบ เกิดจากของมีคมบาด",
+        "morphology": "ปากแผลเรียบชิดติดกันหรือแยกออกเล็กน้อย มีเลือดไหลค่อนข้างมาก ความลึกขึ้นอยู่กับแรงกด",
+        "steps": [
+            "ใช้ผ้าสะอาดหรือผ้าก๊อซกดลงบนบาดแผลโดยตรงอย่างต่อเนื่องเป็นเวลา 2-5 นาทีเพื่อห้ามเลือดให้สนิทก่อน",
+            "ล้างแผลด้วยน้ำสะอาดและสบู่บริเวณรอบๆ แผล หลีกเลี่ยงการเทแอลกอฮอล์ใส่ในแผลโดยตรงเพราะจะทำให้เนื้อเยื่อแสบไหม้",
+            "ทายาฆ่าเชื้อรักษาสมานแผล ดึงขอบแผลให้ชิดเข้าหากัน แล้วปิดด้วยพลาสเตอร์ยาหรือผ้าก๊อซให้แน่นกระชับ"
+        ]
+    },
+    "diabetic_wound": {
+        "title": "Diabetic Wound", "th_title": "แผลเบาหวาน", "is_normal": False, "badge": "Chronic Ulcer",
+        "findings": "พบแผลเรื้อรังบริเวณส่วนปลาย (มักเป็นที่เท้า) ในผู้ป่วยที่มีประวัติโรคเบาหวาน",
+        "morphology": "ขอบแผลหนาและแข็ง (Callus) พื้นแผลมักลึก การไหลเวียนเลือดส่วนปลายลดลง อาจมีความรู้สึกชา",
+        "steps": [
+            "ล้างแผลเบาๆ ด้วยน้ำเกลือทางการแพทย์เท่านั้น ห้ามใช้ยาฆ่าเชื้อที่รุนแรง เช่น เบตาดีนเข้มข้นหรือแอลกอฮอล์ในแผลเด็ดขาด",
+            "ใช้แผ่นปิดแผลเฉพาะทางที่ช่วยรักษาความชุ่มชื้น (เช่น Hydrocolloid หรือ Foam) ตรวจสอบแผลและสัญญาณติดเชื้อทุกวัน",
+            "ปฏิบัติตามหลัก Offloading อย่างเคร่งครัด (ห้ามเดินลงน้ำหนักบริเวณที่เป็นแผล) และควรรีบไปพบแพทย์เฉพาะทาง"
+        ]
+    },
+    "laceration_wound": { 
+        "title": "Laceration Wound", "th_title": "แผลฉีกขาดฉกรรจ์", "is_normal": False, "badge": "Trauma Injury",
+        "findings": "พบแผลฉีกขาดขอบไม่เรียบขรุขระจากการถูกของแข็งกระแทกหรือฉีกกระชาก",
+        "morphology": "เนื้อเยื่อมีการฉีกขาดรุ่งริ่ง แผลมักจะลึกและกว้าง มีเลือดออกปานกลางถึงมาก มักมีสิ่งปนเปื้อน",
+        "steps": [
+            "กดห้ามเลือดทันที โดยใช้ผ้าก๊อซหนาๆ หรือผ้าสะอาดกดลงบนแผลให้แน่นและนิ่งที่สุด หากเลือดซึมเพิ่มให้วางผ้าทับเพิ่มห้ามดึงออก",
+            "หากมีสิ่งสกปรกมาก ให้ใช้น้ำเกลือปริมาณมากราดล้างแผลเพื่อไล่เศษฝุ่น ดิน หรือสิ่งแปลกปลอมออกจากแผลเบื้องต้น",
+            "รีบเดินทางไปโรงพยาบาลทันที เนื่องจากแผลฉีกขาดมักต้องได้รับการเย็บแผลโดยแพทย์ และรับวัคซีนป้องกันบาดทะยัก"
+        ]
+    },
+    "laseration_wound": {  
+        "title": "Laceration Wound", "th_title": "แผลฉีกขาดฉกรรจ์", "is_normal": False, "badge": "Trauma Injury",
+        "findings": "พบแผลฉีกขาดขอบไม่เรียบขรุขระจากการถูกของแข็งกระแทกหรือฉีกกระชาก",
+        "morphology": "เนื้อเยื่อมีการฉีกขาดรุ่งริ่ง แผลมักจะลึกและกว้าง มีเลือดออกปานกลางถึงมาก มักมีสิ่งปนเปื้อน",
+        "steps": [
+            "กดห้ามเลือดทันที โดยใช้ผ้าก๊อซหนาๆ หรือผ้าสะอาดกดลงบนแผลให้แน่นและนิ่งที่สุด หากเลือดซึมเพิ่มให้วางผ้าทับเพิ่มห้ามดึงออก",
+            "หากมีสิ่งสกปรกมาก ให้ใช้น้ำเกลือปริมาณมากราดล้างแผลเพื่อไล่เศษฝุ่น ดิน หรือสิ่งแปลกปลอมออกจากแผลเบื้องต้น",
+            "รีบเดินทางไปโรงพยาบาลทันที เนื่องจากแผลฉีกขาดมักต้องได้รับการเย็บแผลโดยแพทย์ และรับวัคซีนป้องกันบาดทะยัก"
+        ]
+    },
+    "normal": {
+        "title": "Normal Skin", "th_title": "ผิวหนังปกติ", "is_normal": True, "badge": "Healthy Skin",
+        "findings": "ไม่พบรอยโรค การฉีกขาด หรือความผิดปกติใดๆ บนพื้นผิวหนังที่สแกน",
+        "morphology": "เม็ดสีผิวมีความสม่ำเสมอ ผิวหนังมีความยืดหยุ่นและชุ่มชื้นปกติ ไม่พบสัญญาณการอักเสบ",
+        "steps": [
+            "ดูแลความสะอาดของผิวหนังในชีวิตประจำวัน โดยล้างทำความสะอาดด้วยสบู่สูตรอ่อนโยนที่มีค่า pH เหมาะสมกับผิว",
+            "ทาโลชั่นหรือครีมบำรุงผิวเพื่อรักษาความชุ่มชื้น ป้องกันผิวหนังแห้งแตกอันเป็นสาเหตุให้เกิดบาดแผลได้ง่าย",
+            "หลีกเลี่ยงการถูกแดดเผาเป็นเวลานาน และหลีกเลี่ยงการเสียดสีหรือแรงกดทับซ้ำๆ บริเวณปุ่มกระดูก"
+        ]
+    },
+    "pressure_wound": {
+        "title": "Pressure Ulcer", "th_title": "แผลกดทับ", "is_normal": False, "badge": "Stage II",
+        "findings": "พบรอยโรคเนื้อเยื่อถูกทำลายเฉพาะที่จากการถูกกดทับเป็นเวลานาน สูญเสียชั้นผิวหนังบางส่วน",
+        "morphology": "แผลตื้น พื้นแผลมีสีชมพูแดง (Red-pink wound bed) ไม่พบเนื้อตาย (Slough) มีอาการแดงเฉพาะที่รอบแผล",
+        "steps": [
+            "ทำความสะอาดแผลอย่างเบามือด้วยน้ำเกลือปราศจากเชื้อ และปิดแผลด้วยแผ่นโฟมกันกระแทก (Foam dressing) เพื่อลดแรงกด",
+            "จัดตารางเวลาและทำการพลิกตะแคงตัวผู้ป่วยอย่างเคร่งครัดทุกๆ 2 ชั่วโมง เพื่อตัดวงจรไม่ให้แผลโดนกดทับซ้ำ",
+            "ใช้อุปกรณ์ช่วยกระจายแรงกด เช่น ที่นอนลม และดูแลให้ผู้ป่วยได้รับสารอาหารประเภทโปรตีนอย่างเพียงพอเพื่อเร่งการซ่อมแซมผิว"
+        ]
+    },
+    "surgical_wound": {
+        "title": "Surgical Wound", "th_title": "แผลผ่าตัด", "is_normal": False, "badge": "Post-Op Care",
+        "findings": "พบแผลที่เกิดจากการผ่าตัดทางการแพทย์ มีรอยเย็บหรือวัสดุเย็บแผลปรากฏชัดเจน",
+        "morphology": "ขอบแผลเรียบสนิท ยึดติดกันด้วยไหมเย็บ (Sutures) หรือลวด (Staples) รอบแผลอาจบวมแดงเล็กน้อย",
+        "steps": [
+            "ดูแลรักษาแผลให้แห้งและสะอาดอยู่เสมอ ห้ามให้แผลโดนน้ำอย่างเด็ดขาดจนกว่าจะได้รับอนุญาตจากศัลยแพทย์เจ้าของไข้",
+            "หากแพทย์สั่งให้ทำแผล ให้ใช้สำลีชุบน้ำยาฆ่าเชื้อตามที่แพทย์สั่ง เช็ดรอบๆ รอยเย็บเบาๆ จากข้างในวนออกข้างนอก",
+            "เฝ้าระวังอาการติดเชื้ออย่างใกล้ชิด เช่น แผลบวมแดงมากขึ้น มีหนองไหล ปวดแผลทวีความรุนแรง หรือมีไข้สูง"
+        ]
+    },
+    "venous_wound": {
+        "title": "Venous Wound", "th_title": "แผลหลอดเลือดดำเรื้อรัง", "is_normal": False, "badge": "Vascular Ulcer",
+        "findings": "พบแผลเรื้อรังบริเวณขาหรือข้อเท้า เกิดจากความดันหลอดเลือดดำสูงและไหลเวียนกลับไม่ดี",
+        "morphology": "แผลมักจะตื้น ขอบแผลไม่สม่ำเสมอ พื้นแผลอาจมีน้ำเหลืองซึมออกมาก ผิวหนังรอบๆ มีสีคล้ำหรือหนาตัว",
+        "steps": [
+            "ล้างแผลด้วยน้ำเกลือและเลือกใช้แผ่นปิดแผลที่สามารถดูดซับน้ำเหลืองได้สูง (High-absorbency dressing) เพื่อจัดการสารคัดหลั่ง",
+            "เวลานั่งหรือนอนพัก ให้ยกขาให้อยู่สูงกว่าระดับหัวใจบ่อยๆ เพื่อช่วยให้เลือดดำไหลเวียนกลับสู่หัวใจได้ดีขึ้นและลดอาการบวม",
+            "ใช้ผ้าพันยืดลดบวมหรือถุงน่องกระชับกล้ามเนื้อ (Compression therapy) ตามคำสั่งของแพทย์อย่างเคร่งครัดเพื่อเพิ่มแรงดันเลือด"
+        ]
+    }
+}
 
-tab_upload, tab_camera = st.tabs(["📁 File Upload", "📷 Use Camera"])
+@st.cache_resource
+def load_model():
+    return YOLO("runs/detect/train-52/weights/best.pt")
 
-uploaded_file = None
-camera_file = None
-v = st.session_state["widget_version"]
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"ไม่สามารถโหลดโมเดลได้: {e}")
+    model = None
 
-with tab_upload:
-    uploaded_file = st.file_uploader(
-        "เลือกรูปภาพ...",
-        type=["jpg", "jpeg", "png"],
-        label_visibility="collapsed",
-        key=f"file_uploader_{v}"
-    )
+# --- ส่วนหัวจัดตรงกลางขยายเต็มหน้าจอ ---
+st.markdown("""
+<div style="width: 100%; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #c2c6d4; background-color: white; padding: 12px 16px; margin-bottom: 20px; border-radius: 8px;">
+    <span class="material-symbols-outlined" style="color:#00478d; font-size: 24px; margin-right: 8px;">biotech</span>
+    <h1 style="margin:0; font-size:22px; font-weight:700; color:#00478d; font-family:'Inter';">WoundAi</h1>
+</div>
+<h2 class='center-text' style='margin-top:10px; margin-bottom:2px; font-size: 24px; color:#00478d; font-weight:700;'>New Analysis</h2>
+<p class='center-text' style='color:#424752; margin-bottom:20px;'>Ensure the wound is centered and well-lit for accurate diagnostic results.</p>
+""", unsafe_allow_html=True)
+
+tab_camera, tab_upload = st.tabs(["📸 กล้องถ่ายรูป", "📁 อัปโหลดไฟล์ภาพ"])
+image_to_process = None
 
 with tab_camera:
-    camera_file = st.camera_input(
-        "Take clinical photo",
-        label_visibility="collapsed",
-        key=f"camera_input_{v}"
-    )
+    camera_file = st.camera_input("ถ่ายภาพแผล")
+    if camera_file is not None:
+        image_to_process = camera_file
 
-active_file = uploaded_file or camera_file
+with tab_upload:
+    uploaded_file = st.file_uploader("เลือกไฟล์ภาพ...", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        image_to_process = uploaded_file
 
-if active_file is None:
-    st.markdown(
-        '<div class="empty-state">No image yet. Upload an image file or take a photo to begin.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="footnote">WoundAI is a decision-support tool, not a diagnostic device. '
-        "Clinical judgment should always take precedence over model output.</div>",
-        unsafe_allow_html=True,
-    )
-    st.stop()
+if image_to_process is not None:
+    st.markdown("---")
+    with st.spinner("กำลังวิเคราะห์..."):
+        try:
+            bytes_data = image_to_process.getvalue() if hasattr(image_to_process, 'getvalue') else image_to_process.read()
+            file_bytes = np.asarray(bytearray(bytes_data), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            
+            if model is not None and img is not None:
+                results = model(img)
+                res_plotted = results[0].plot()
+                
+                # แสดงภาพผลลัพธ์จาก AI ให้เต็มตาม Container ของ Wide Layout พร้อมแก้สี BGR
+                st.image(res_plotted, use_container_width=True, channels="BGR")
+                
+                boxes = results[0].boxes
+                class_key = "normal"
+                confidence_score = 0.0
+                
+                if len(boxes) > 0:
+                    best_box_idx = np.argmax(boxes.conf.cpu().numpy())
+                    class_id = int(boxes.cls[best_box_idx])
+                    confidence_score = float(boxes.conf[best_box_idx]) * 100
+                    class_key = model.names[class_id].lower()
+                
+                if class_key not in FIRST_AID_GUIDE:
+                    class_key = "normal"
+                    
+                guide = FIRST_AID_GUIDE[class_key]
+                severity_color = "#10B981" if guide["is_normal"] else ("#F59E0B" if "stage" in guide["badge"].lower() or "chronic" in guide["badge"].lower() else "#EF4444")
+                confidence_text = "ระดับความเชื่อมั่นสูง" if confidence_score > 70 else "ระดับความเชื่อมั่นปานกลาง"
+                
+                # แยกคำนวณ SVG offset เพื่อตัดปัญหาปีกกาของสไตล์ออกจากระบบ String formatting
+                dash_val = 113.1 - (113.1 * confidence_score / 100)
+                
+                # วนลูปสร้างไอเท็ม Next Steps ขยายความกว้างแบบ 100% กว้างเต็มจอ 
+                step_items_html = ""
+                colors_bg = ["background-color:#eff6ff; color:#1d4ed8;", "background-color:#fff7ed; color:#c2410c;", "background-color:#faf5ff; color:#6b21a8;"]
+                
+                for i, step_text in enumerate(guide["steps"]):
+                    sc = colors_bg[i] if i < len(colors_bg) else "background-color:#f3f4f6; color:#374151;"
+                    # เปลี่ยนให้แสดงหัวข้อเป็นลำดับขั้นตอน Step 1, Step 2, Step 3 ชัดเจน
+                    ts = f"Step {i+1}"
+                    
+                    step_items_html += '<div style="width: 100%; display: flex; gap: 16px; padding: 12px; border-radius: 8px; margin-bottom:10px; background-color:#ffffff; border:1px solid #f3f4f6;">'
+                    # เปลี่ยนไอคอนเป็นตัวเลขลำดับขั้นตอน 1, 2, 3 ที่มีสีสันแมตช์ตามธีมเดิม
+                    step_items_html += f'<div style="height: 32px; width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight:700; font-size:14px; {sc}">'
+                    step_items_html += f'{i+1}</div>'
+                    step_items_html += f'<div><p style="margin:0; font-size:12px; font-weight:700; color:#141d23; text-transform: uppercase;">{ts}</p>'
+                    step_items_html += f'<p style="margin:2px 0 0 0; font-size:14px; color:#424752;">{step_text}</p></div></div>'
 
-# Load image from active file handle
-image = Image.open(active_file).convert("RGB")
-file_name = getattr(active_file, "name", "Captured Photo.jpg")
+                # HTML Template ชิดซ้ายสุด เพื่อป้องกัน Markdown Parser เข้าใจผิดว่าเป็น Code Block
+                html_template = """
+<div style="width: 100%; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 15px; margin-bottom: 12px;">
+<div style="flex: 1; min-width: 260px; border: 1px solid #E9ECEF; background: #FFFFFF; padding: 16px; border-radius: 12px; display: flex; gap: 16px; position: relative; overflow: hidden;">
+<div style="background-color: {severity_color}; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 2px 0 0 2px;"></div>
+<div style="background-color: #e0e9f2; padding: 12px; border-radius: 8px; color: #00478d; display: flex; align-items: center; justify-content: center; height: 48px; width: 48px;">
+<span class="material-symbols-outlined" style="font-size: 24px;">biotech</span>
+</div>
+<div>
+<p style="margin: 0; font-size: 12px; font-weight: 500; color: #424752;">Classification</p>
+<h2 style="margin: 2px 0 0 0; font-size: 18px; font-weight: 600; color: #141d23;">{title}</h2>
+<span style="display: inline-block; margin-top: 6px; background-color: #d5e3ff; color: #234778; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px;">{badge}</span>
+</div>
+</div>
 
-st.markdown(
-    """
-    <div class="wa-step"><div class="dot"></div><div class="wa-step-label">02 · Review image</div></div>
-    """,
-    unsafe_allow_html=True,
-)
-st.image(image, caption=file_name, use_container_width=True)
+<div style="flex: 1; min-width: 260px; border: 1px solid #E9ECEF; background: #FFFFFF; padding: 16px; border-radius: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; align-items: center; gap: 6px;">
+<span class="material-symbols-outlined" style="color:#00478d; font-size: 14px;">verified</span>
+<p style="margin: 0; font-size: 12px; font-weight: 500; color: #424752;">Confidence Index</p>
+</div>
+<span style="background-color: #dbe4ed; color: #00468c; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 9999px;">CERTIFIED AI MODEL</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
+<div>
+<span style="font-size: 26px; font-weight: 700; color: #00478d; line-height: 30px;">{conf_score:.1f}%</span><br>
+<span style="font-size: 12px; font-weight: 500; color: #10B981;">{conf_text}</span>
+</div>
+<div style="position: relative; height: 44px; width: 44px; display: flex; align-items: center; justify-content: center;">
+<svg style="width: 100%; height: 100%; transform: rotate(-90deg);">
+<circle cx="22" cy="22" fill="transparent" r="18" stroke="#e6eff8" stroke-width="4"></circle>
+<circle cx="22" cy="22" fill="transparent" r="18" stroke-width="4" stroke="#00478d" stroke-dasharray="113.1" stroke-dashoffset="{dash_offset}"></circle>
+</svg>
+<span style="font-size: 9px; font-weight: 700; color: #00478d; position: absolute;">AI</span>
+</div>
+</div>
+</div>
+</div>
 
-# ----------------------------------------------------------------------------
-# Step 3 — Actions (Detect & Clear)
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="wa-step"><div class="dot"></div><div class="wa-step-label">03 · Actions</div></div>
-    """,
-    unsafe_allow_html=True,
-)
+<section style="width: 100%; border: 1px solid #E9ECEF; background: #FFFFFF; padding: 16px; border-radius: 12px; margin-bottom:12px; font-family:'Inter';">
+<h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; color: #3d5f92; text-align: center;">
+<span class="material-symbols-outlined">description</span> Clinical Analysis
+</h3>
+<div style="display: flex; justify-content: space-between; font-size: 10px; color: #424752; border-bottom: 1px solid #c2c6d4; padding-bottom: 6px; margin-bottom: 10px;">
+<span>Ref ID: #WS-9821-003</span>
+<span>Status: AI Auto-Generated</span>
+</div>
+<div style="margin-bottom: 10px;">
+<p style="margin:0; font-size: 12px; font-weight: 700; color: #00478d; text-transform: uppercase;">Key Findings (ผลการตรวจหลัก)</p>
+<p style="margin: 2px 0 0 0; font-size: 14px; color: #424752;">พบรอยโรคที่มีลักษณะเฉพาะของ <span style="font-weight: 600; color: #141d23;">{th_title} ({title})</span> {findings}</p>
+</div>
+<div style="margin-bottom: 10px;">
+<p style="margin:0; font-size: 12px; font-weight: 700; color: #00478d; text-transform: uppercase;">Morphology (ลักษณะทางสัณฐานวิทยา)</p>
+<p style="margin: 2px 0 0 0; font-size: 14px; color: #424752;">{morphology}</p>
+</div>
+</section>
 
-col1, col2 = st.columns([1, 4])
-with col1:
-    run = st.button("Detect wounds", type="primary", use_container_width=True)
-with col2:
-    clear = st.button("Clear image", type="secondary", on_click=reset_all_inputs)
+<section style="width: 100%; border: 1px solid #E9ECEF; background: #FFFFFF; padding: 16px; border-radius: 12px; margin-bottom:12px; font-family:'Inter';">
+<h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; color: #3d5f92; text-align: center;">
+<span class="material-symbols-outlined">assignment_turned_in</span> Next Steps (วิธีดูแลเบื้องต้น)
+</h3>
+<div style="width: 100%;">{steps_content}</div>
+</section>
 
-if run:
-    with st.spinner("Analyzing image..."):
-        t0 = time.time()
-        
-        # 1. Convert PIL image to numpy array
-        img_array = np.array(image)
-        
-        # 2. Convert RGB to BGR for proper model processing
-        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-        
-        # 3. Pass the corrected BGR array into the model
-        results = model(img_bgr, verbose=False, conf=0.01)
-        elapsed = time.time() - t0
+<section style="width: 100%; border: 1px solid rgba(0,93,182,0.2); background: #ecf5fe; padding: 14px; border-radius: 12px; font-family:'Inter';">
+<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+<div style="display: flex; align-items: center; gap: 12px;">
+<div style="height: 36px; width: 36px; border-radius: 50%; background-color: rgba(0,71,141,0.1); display: flex; align-items: center; justify-content: center; color: #00478d;">
+<span class="material-symbols-outlined">clinical_notes</span>
+</div>
+<div>
+<p style="margin:0; font-size: 12px; font-weight: 700; color: #141d23;">Review Status</p>
+<p style="margin:0; font-size: 10px; color: #424752;">รอยืนยันโดยแพทย์ผู้เชี่ยวชาญเพื่อความแม่นยำ</p>
+</div>
+</div>
+<span style="background-color: #ffdad6; color: #93000a; font-size: 10px; font-weight: 700; padding: 4px 12px; border-radius: 9999px;">PENDING REVIEW</span>
+</div>
+</section>
+"""
+                
+                # ส่งค่าเข้าไปแทนที่ในจุดปลอดภัยโดยใช้ฟังก์ชัน .format()
+                st.markdown(html_template.format(
+                    severity_color=severity_color,
+                    title=guide["title"],
+                    badge=guide["badge"],
+                    conf_score=confidence_score,
+                    conf_text=confidence_text,
+                    dash_offset=dash_val,
+                    th_title=guide["th_title"],
+                    findings=guide["findings"],
+                    morphology=guide["morphology"],
+                    steps_content=step_items_html
+                ), unsafe_allow_html=True)
 
-        result = results[0]
-        boxes = result.boxes
-        
-        # 4. Plot results (Ultralytics plots natively in BGR, convert it back to RGB for Streamlit)
-        res_plotted = result.plot()
-        res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
-        
-        # Debug trace to console logs
-        print("RAW DETECTIONS FOUND:", len(boxes))
-        if len(boxes) > 0:
-            print("Confidences:", [float(b.conf[0]) for b in boxes])
+            else:
+                st.error("ไม่สามารถโหลดภาพหรือโมเดลสำเร็จ")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
 
-    st.markdown(
-        """
-        <div class="wa-step"><div class="dot"></div><div class="wa-step-label">04 · Results</div></div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    n_detections = len(boxes) if boxes is not None else 0
-
-    st.markdown(
-        f"""
-        <div class="summary-strip">
-            <span><b>{n_detections}</b> detection{'s' if n_detections != 1 else ''}</span>
-            <span><b>{elapsed:.2f}s</b> inference time</span>
-            <span><b>{image.size[0]}×{image.size[1]}</b> px</span>
+# --- แถบแนะนำการถ่ายภาพ (Imaging Guidelines) ด้านล่างสุด ---
+st.markdown("""
+    <div class="guideline-box">
+        <h3 style="margin-top: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 5px; color: #00478d; font-weight:600; text-align: center;">
+            <span class="material-symbols-outlined">health_metrics</span> Imaging Guidelines
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; font-size: 12px; color: #424752; margin-top:8px;">
+            <div><strong style="color: #00478d;">💡 LIGHTING</strong><br>Use natural or bright white clinic light.</div>
+            <div><strong style="color: #00478d;">📏 DISTANCE</strong><br>Hold device 15-20cm from the wound site.</div>
+            <div><strong style="color: #00478d;">🎯 STABILITY</strong><br>Hold still until focus locks for precision.</div>
+            <div><strong style="color: #00478d;">✨ OBSTACLES</strong><br>Clear hair or dressing edges from view.</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.image(res_rgb, caption="Detected regions", use_container_width=True)
-
-    if n_detections > 0:
-        for i, box in enumerate(boxes):
-            conf = float(box.conf[0])
-            cls_id = int(box.cls[0])
-            cls_name = model.names.get(cls_id, f"class {cls_id}") if isinstance(model.names, dict) else str(cls_id)
-            is_low = conf < CONFIDENCE_THRESHOLD
-            tone = "low" if is_low else "ok"
-            tag_text = "LOW CONFIDENCE" if is_low else "ABOVE THRESHOLD"
-
-            st.markdown(
-                f"""
-                <div class="vitals-card">
-                    <div>
-                        <div class="vitals-label">Detection #{i + 1}</div>
-                        <div class="vitals-class">{cls_name}</div>
-                        <div class="vitals-tag {tone}">{tag_text}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <span class="vitals-reading {tone}">{conf * 100:.1f}</span><span class="vitals-unit">% conf</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.markdown(
-            '<div class="empty-state">No wound regions detected in this image.</div>',
-            unsafe_allow_html=True,
-        )
-
-st.markdown(
-    '<div class="footnote">WoundAI is a decision-support tool, not a diagnostic device. '
-    "Clinical judgment should always take precedence over model output.</div>",
-    unsafe_allow_html=True,
-)
+    </div>
+""", unsafe_allow_html=True)
