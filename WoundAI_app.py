@@ -153,7 +153,7 @@ FIRST_AID_GUIDE = {
 
 @st.cache_resource
 def load_model():
-    return YOLO("runs/detect/train-52/weights/best.pt")
+    return YOLO("best.pt")
 
 try:
     model = load_model()
