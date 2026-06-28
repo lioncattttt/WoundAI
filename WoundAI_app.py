@@ -1,10 +1,10 @@
 import streamlit as st
 from ultralytics import YOLO
-import cv2
+import cv2u
 import numpy as np
 
 # --- การตั้งค่าหน้าเว็บและการแสดงผลแบบเต็มหน้าจอ (Wide Layout) ---
-st.set_page_config(page_title="WoundAi - Analysis", layout="wide")
+st.set_page_config(page_title="WoundAi - Analysis", layot="wide")
 
 # สไตล์ CSS หลัก สำหรับปรับแต่งสตรีมลิตให้สวยงามเต็มหน้าจออย่างแท้จริง
 st.markdown("""
@@ -344,13 +344,13 @@ if image_to_process is not None:
 st.markdown("""
     <div class="guideline-box">
         <h3 style="margin-top: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 5px; color: #00478d; font-weight:600; text-align: center;">
-            <span class="material-symbols-outlined">health_metrics</span> Imaging Guidelines
+            <span class="material-symbols-outlined">health_metrics</span> แนวทางการถ่ายภาพแผลเพื่อการวิเคราะห์ที่แม่นยำ
         </h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; font-size: 12px; color: #424752; margin-top:8px;">
-            <div><strong style="color: #00478d;">💡 LIGHTING</strong><br>Use natural or bright white clinic light.</div>
-            <div><strong style="color: #00478d;">📏 DISTANCE</strong><br>Hold device 15-20cm from the wound site.</div>
-            <div><strong style="color: #00478d;">🎯 STABILITY</strong><br>Hold still until focus locks for precision.</div>
-            <div><strong style="color: #00478d;">✨ OBSTACLES</strong><br>Clear hair or dressing edges from view.</div>
+            <div><strong style="color: #00478d;">💡 LIGHTING(แสง)</strong><br>ใช้แสงสว่างธรรมชาติหรือแสงขาวสว่าง.</div>
+            <div><strong style="color: #00478d;">📏 DISTANCE(ระยะ)</strong><br>วางอุปกรณ์ห่างจากจุดแผล 15-20 เซนติเมตร.</div>
+            <div><strong style="color: #00478d;">🎯 STABILITY(ความเสถียร)</strong><br>คงที่จนกว่าโฟกัสจะล็อกเพื่อความแม่นยำ.</div>
+            <div><strong style="color: #00478d;">✨ OBSTACLES(สิ่งกีดขวาง)</strong><br>ล้างขนหรือขอบผ้าพันแผลออกจากมุมมอง.</div>
         </div>
     </div>
 """, unsafe_allow_html=True)
