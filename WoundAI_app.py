@@ -47,7 +47,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- คลังข้อมูลวิธีปฐมพยาบาล 10 คลาส (เวอร์ชันขั้นตอนภาษาไทย เข้าใจง่าย ปฏิบัติตามได้ทันที) ---
+# --- คลังข้อมูลวิธีปฐมพยาบาล (ลบคีย์สะกดผิดและคีย์ซ้ำซ้อนออกแล้ว) ---
 FIRST_AID_GUIDE = {
     "abrasion_wound": {
         "title": "Abrasion Wound", "th_title": "แผลถลอก", "is_normal": False, "badge": "Surface Injury",
@@ -79,16 +79,6 @@ FIRST_AID_GUIDE = {
             "ทาเจลว่านหางจระเข้สำหรับแผลไหม้หรือยาทางแพทย์ จากนั้นปิดแผลหลวมๆ ด้วยผ้าก๊อซสะอาดเพื่อป้องกันสิ่งสกปรก"
         ]
     },
-    "brun_wound": {  
-        "title": "Burn Wound", "th_title": "แผลไฟไหม้ / น้ำร้อนลวก", "is_normal": False, "badge": "Thermal Injury",
-        "findings": "พบการทำลายของเนื้อเยื่อผิวหนังจากความร้อน สารเคมี หรือกระแสไฟฟ้า",
-        "morphology": "ผิวหนังแดงจัด บวม มีตุ่มน้ำพอง (Blisters) หรือผิวหนังลอกหลุด มีความรู้สึกปวดแสบปวดร้อนรุนแรง",
-        "steps": [
-            "ล้างแผลทันทีด้วยน้ำสะอาดอุณหภูมิห้องไหลผ่านเบาๆ นาน 10-20 นาที เพื่อระบายความร้อน ห้ามใช้น้ำแข็งหรือยาสีฟันเด็ดขาด",
-            "ห้ามเจาะหรือแกะตุ่มน้ำพองที่เกิดขึ้นเอง เนื่องจากผิวหนังของตุ่มน้ำเป็นเกราะป้องกันเชื้อโรคตามธรรมชาติที่สำคัญที่สุด",
-            "ทาเจลว่านหางจระเข้สำหรับแผลไหม้หรือยาทางแพทย์ จากนั้นปิดแผลหลวมๆ ด้วยผ้าก๊อซสะอาดเพื่อป้องกันสิ่งสกปรก"
-        ]
-    },
     "cut_wound": {
         "title": "Cut Wound", "th_title": "แผลถูกบาด / แผลของมีคม", "is_normal": False, "badge": "Incised Wound",
         "findings": "พบรอยแยกของผิวหนังเป็นทางยาวขอบเรียบ เกิดจากของมีคมบาด",
@@ -110,16 +100,6 @@ FIRST_AID_GUIDE = {
         ]
     },
     "laceration_wound": { 
-        "title": "Laceration Wound", "th_title": "แผลฉีกขาดฉกรรจ์", "is_normal": False, "badge": "Trauma Injury",
-        "findings": "พบแผลฉีกขาดขอบไม่เรียบขรุขระจากการถูกของแข็งกระแทกหรือฉีกกระชาก",
-        "morphology": "เนื้อเยื่อมีการฉีกขาดรุ่งริ่ง แผลมักจะลึกและกว้าง มีเลือดออกปานกลางถึงมาก มักมีสิ่งปนเปื้อน",
-        "steps": [
-            "กดห้ามเลือดทันที โดยใช้ผ้าก๊อซหนาๆ หรือผ้าสะอาดกดลงบนแผลให้แน่นและนิ่งที่สุด หากเลือดซึมเพิ่มให้วางผ้าทับเพิ่มห้ามดึงออก",
-            "หากมีสิ่งสกปรกมาก ให้ใช้น้ำเกลือปริมาณมากราดล้างแผลเพื่อไล่เศษฝุ่น ดิน หรือสิ่งแปลกปลอมออกจากแผลเบื้องต้น",
-            "รีบเดินทางไปโรงพยาบาลทันที เนื่องจากแผลฉีกขาดมักต้องได้รับการเย็บแผลโดยแพทย์ และรับวัคซีนป้องกันบาดทะยัก"
-        ]
-    },
-    "laseration_wound": {  
         "title": "Laceration Wound", "th_title": "แผลฉีกขาดฉกรรจ์", "is_normal": False, "badge": "Trauma Injury",
         "findings": "พบแผลฉีกขาดขอบไม่เรียบขรุขระจากการถูกของแข็งกระแทกหรือฉีกกระชาก",
         "morphology": "เนื้อเยื่อมีการฉีกขาดรุ่งริ่ง แผลมักจะลึกและกว้าง มีเลือดออกปานกลางถึงมาก มักมีสิ่งปนเปื้อน",
@@ -216,7 +196,6 @@ if image_to_process is not None:
                 results = model(img)
                 res_plotted = results[0].plot()
                 
-                # แสดงภาพผลลัพธ์จาก AI ให้เต็มตาม Container ของ Wide Layout พร้อมแก้สี BGR
                 st.image(res_plotted, use_container_width=True, channels="BGR")
                 
                 boxes = results[0].boxes
@@ -227,7 +206,14 @@ if image_to_process is not None:
                     best_box_idx = np.argmax(boxes.conf.cpu().numpy())
                     class_id = int(boxes.cls[best_box_idx])
                     confidence_score = float(boxes.conf[best_box_idx]) * 100
-                    class_key = model.names[class_id].lower()
+                    # เพิ่มความปลอดภัย: รองรับกรณีกระทบความผิดพลาดของคำทำนาย (Fallback mapping)
+                    raw_key = model.names[class_id].lower()
+                    if raw_key in ["brun_wound", "burn_wound"]:
+                        class_key = "burn_wound"
+                    elif raw_key in ["laseration_wound", "laceration_wound"]:
+                        class_key = "laceration_wound"
+                    else:
+                        class_key = raw_key
                 
                 if class_key not in FIRST_AID_GUIDE:
                     class_key = "normal"
@@ -236,26 +222,27 @@ if image_to_process is not None:
                 severity_color = "#10B981" if guide["is_normal"] else ("#F59E0B" if "stage" in guide["badge"].lower() or "chronic" in guide["badge"].lower() else "#EF4444")
                 confidence_text = "ระดับความเชื่อมั่นสูง" if confidence_score > 70 else "ระดับความเชื่อมั่นปานกลาง"
                 
-                # แยกคำนวณ SVG offset เพื่อตัดปัญหาปีกกาของสไตล์ออกจากระบบ String formatting
                 dash_val = 113.1 - (113.1 * confidence_score / 100)
                 
-                # วนลูปสร้างไอเท็ม Next Steps ขยายความกว้างแบบ 100% กว้างเต็มจอ 
+                # ปรับแต่งคำอธิบายประเภทเนื้อหาให้เหมาะสมกับเคสผิวปกติ
+                if guide["is_normal"]:
+                    clinical_findings = guide["findings"]
+                else:
+                    clinical_findings = f"พบรอยโรคที่มีลักษณะเฉพาะของ <span style='font-weight: 600; color: #141d23;'>{guide['th_title']} ({guide['title']})</span> {guide['findings']}"
+
                 step_items_html = ""
                 colors_bg = ["background-color:#eff6ff; color:#1d4ed8;", "background-color:#fff7ed; color:#c2410c;", "background-color:#faf5ff; color:#6b21a8;"]
                 
                 for i, step_text in enumerate(guide["steps"]):
                     sc = colors_bg[i] if i < len(colors_bg) else "background-color:#f3f4f6; color:#374151;"
-                    # เปลี่ยนให้แสดงหัวข้อเป็นลำดับขั้นตอน Step 1, Step 2, Step 3 ชัดเจน
                     ts = f"Step {i+1}"
                     
                     step_items_html += '<div style="width: 100%; display: flex; gap: 16px; padding: 12px; border-radius: 8px; margin-bottom:10px; background-color:#ffffff; border:1px solid #f3f4f6;">'
-                    # เปลี่ยนไอคอนเป็นตัวเลขลำดับขั้นตอน 1, 2, 3 ที่มีสีสันแมตช์ตามธีมเดิม
                     step_items_html += f'<div style="height: 32px; width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight:700; font-size:14px; {sc}">'
                     step_items_html += f'{i+1}</div>'
                     step_items_html += f'<div><p style="margin:0; font-size:12px; font-weight:700; color:#141d23; text-transform: uppercase;">{ts}</p>'
                     step_items_html += f'<p style="margin:2px 0 0 0; font-size:14px; color:#424752;">{step_text}</p></div></div>'
 
-                # HTML Template ชิดซ้ายสุด เพื่อป้องกัน Markdown Parser เข้าใจผิดว่าเป็น Code Block
                 html_template = """
 <div style="width: 100%; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 15px; margin-bottom: 12px;">
 <div style="flex: 1; min-width: 260px; border: 1px solid #E9ECEF; background: #FFFFFF; padding: 16px; border-radius: 12px; display: flex; gap: 16px; position: relative; overflow: hidden;">
@@ -304,7 +291,7 @@ if image_to_process is not None:
 </div>
 <div style="margin-bottom: 10px;">
 <p style="margin:0; font-size: 12px; font-weight: 700; color: #00478d; text-transform: uppercase;">Key Findings (ผลการตรวจหลัก)</p>
-<p style="margin: 2px 0 0 0; font-size: 14px; color: #424752;">พบรอยโรคที่มีลักษณะเฉพาะของ <span style="font-weight: 600; color: #141d23;">{th_title} ({title})</span> {findings}</p>
+<p style="margin: 2px 0 0 0; font-size: 14px; color: #424752;">{clinical_findings}</p>
 </div>
 <div style="margin-bottom: 10px;">
 <p style="margin:0; font-size: 12px; font-weight: 700; color: #00478d; text-transform: uppercase;">Morphology (ลักษณะทางสัณฐานวิทยา)</p>
@@ -335,7 +322,6 @@ if image_to_process is not None:
 </section>
 """
                 
-                # ส่งค่าเข้าไปแทนที่ในจุดปลอดภัยโดยใช้ฟังก์ชัน .format()
                 st.markdown(html_template.format(
                     severity_color=severity_color,
                     title=guide["title"],
@@ -343,8 +329,7 @@ if image_to_process is not None:
                     conf_score=confidence_score,
                     conf_text=confidence_text,
                     dash_offset=dash_val,
-                    th_title=guide["th_title"],
-                    findings=guide["findings"],
+                    clinical_findings=clinical_findings,
                     morphology=guide["morphology"],
                     steps_content=step_items_html
                 ), unsafe_allow_html=True)
